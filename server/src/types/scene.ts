@@ -56,3 +56,15 @@ export const renderRequestSchema = z.object({
     font_family: z.string().min(1),
   }),
 });
+
+// Re-export RenderJobStatus from job-manager
+export type { RenderJobStatus } from '../services/job-manager.js';
+
+// API response for job status
+export interface RenderJobResponse {
+  jobId: string;
+  status: string;
+  progress: number;
+  downloadUrl?: string;
+  error?: string;
+}

@@ -1,0 +1,31 @@
+services:
+  katbox-render:
+    build:
+      context: https://github.com/smikesbit/katbox-content-engine.git#main:server
+      dockerfile: Dockerfile
+    container_name: katbox-render
+    restart: unless-stopped
+    volumes:
+      - render_output:/app/output
+    expose:
+      - "3000"
+    environment:
+      - PORT=3000
+      - LOG_LEVEL=info
+      - TZ=Asia/Manila
+      - RENDER_BASE_URL=https://render.digitalcallum.com
+    networks:
+      - n8n_default
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      start_period: 180s
+      retries: 3
+
+volumes:
+  render_output:
+
+networks:
+  n8n_default:
+    external: true
