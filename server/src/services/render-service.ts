@@ -29,7 +29,17 @@ export class RenderService {
     const entryPoint = path.resolve(process.cwd(), 'src/remotion/index.ts');
     this.bundleLocation = await bundle({
       entryPoint,
-      // Use default options - Remotion will handle the rest
+      webpackOverride: (config) => {
+        // NodeNext module resolution uses .js extensions in imports (e.g. './Root.js')
+        // but the actual files are .ts/.tsx. Tell webpack to resolve .js → .ts/.tsx.
+        config.resolve = {
+          ...config.resolve,
+          extensionAlias: {
+            '.js': ['.js', '.ts', '.tsx'],
+          },
+        };
+        return config;
+      },
     });
 
     logger.info({ msg: 'Remotion bundle created', location: this.bundleLocation });
