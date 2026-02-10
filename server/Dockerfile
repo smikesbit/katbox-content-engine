@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy package files and install all dependencies (including dev for build)
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy source code and build
 COPY tsconfig.json ./
@@ -38,7 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy package files and install production dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Install Chrome Headless Shell for Remotion
 RUN npx remotion browser ensure
