@@ -1,6 +1,9 @@
 # Output directory for rendered videos
 output/
 
+# Assets directory for generated assets
+assets/
+
 # Node modules
 node_modules/
 

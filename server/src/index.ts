@@ -4,8 +4,10 @@ import path from 'path';
 import { logger, httpLogger } from './logger.js';
 import { healthRouter } from './routes/health.js';
 import { renderRouter } from './routes/render.js';
+import { assetsRouter } from './routes/assets.js';
 import { renderService } from './services/render-service.js';
 import { jobManager } from './services/job-manager.js';
+import { assetGenerator } from './services/asset-generator.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -17,9 +19,13 @@ app.use(httpLogger);
 // Static file serving for rendered videos
 app.use('/output', express.static(path.join(process.cwd(), 'output')));
 
+// Static file serving for generated assets
+app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
+
 // Routes
 app.use('/health', healthRouter);
 app.use('/render', renderRouter);
+app.use('/assets/generate', assetsRouter);
 
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -55,8 +61,13 @@ app.listen(PORT, () => {
 
 // Periodic job cleanup (every 1 hour, remove jobs older than 24 hours)
 setInterval(() => {
-  const cleaned = jobManager.cleanupOldJobs(24 * 60 * 60 * 1000);
-  if (cleaned > 0) {
-    logger.info({ msg: 'Cleaned old jobs', count: cleaned });
+  const cleanedRenderJobs = jobManager.cleanupOldJobs(24 * 60 * 60 * 1000);
+  if (cleanedRenderJobs > 0) {
+    logger.info({ msg: 'Cleaned old render jobs', count: cleanedRenderJobs });
+  }
+
+  const cleanedAssetJobs = assetGenerator.cleanupOldJobs(24 * 60 * 60 * 1000);
+  if (cleanedAssetJobs > 0) {
+    logger.info({ msg: 'Cleaned old asset jobs', count: cleanedAssetJobs });
   }
 }, 60 * 60 * 1000);
