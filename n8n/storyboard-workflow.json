@@ -1,0 +1,555 @@
+{
+  "name": "Storyboard Generation Pipeline",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger-node",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "path": "storyboard-generation-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger-node",
+      "name": "Webhook Trigger (disabled)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 460],
+      "webhookId": "storyboard-generation-webhook",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "spreadsheetId",
+              "value": "CONFIGURE_YOUR_GOOGLE_SHEETS_ID"
+            },
+            {
+              "name": "renderServerUrl",
+              "value": "https://render.digitalcallum.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "read-config",
+      "name": "Read Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [460, 380]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Topics",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            {
+              "column": "status",
+              "condition": "equals",
+              "value": "New"
+            }
+          ]
+        },
+        "options": {
+          "sort": {
+            "sortOn": "row_number",
+            "sortOrder": "ascending"
+          }
+        }
+      },
+      "id": "read-unprocessed-topics",
+      "name": "Read Unprocessed Topics",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [680, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.topic_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-if-topic-found",
+      "name": "Check if Topic Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Topics",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "columnToMatchOn": "topic_id",
+        "valueToMatchOn": "={{ $('Read Unprocessed Topics').item.json.topic_id }}",
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "status",
+              "fieldValue": "Selected"
+            }
+          ]
+        }
+      },
+      "id": "update-topic-to-selected",
+      "name": "Update Topic Status to Selected",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [1120, 280],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Read Config').item.json.renderServerUrl }}/storyboard/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "topicId",
+              "value": "={{ $('Read Unprocessed Topics').item.json.topic_id }}"
+            },
+            {
+              "name": "topicTitle",
+              "value": "={{ $('Read Unprocessed Topics').item.json.title }}"
+            },
+            {
+              "name": "topicSummary",
+              "value": "={{ $('Read Unprocessed Topics').item.json.summary }}"
+            },
+            {
+              "name": "contentPillar",
+              "value": "={{ $('Read Unprocessed Topics').item.json.content_pillar }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "trigger-storyboard-generation",
+      "name": "Trigger Storyboard Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1340, 280]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "id": "wait-before-poll",
+      "name": "Wait 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1560, 280]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Read Config').item.json.renderServerUrl }}/storyboard/generate/{{ $('Trigger Storyboard Generation').item.json.jobId }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "poll-job-status",
+      "name": "Poll Job Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1780, 280]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "check-if-completed",
+      "name": "Check if Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2000, 280]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Transform completed job response into individual scene items for Google Sheets\nconst job = items[0].json;\nconst storyboardId = job.storyboardId;\nconst topicId = job.topicId;\nconst scenes = job.scenes;\n\n// Create a row for each scene\nconst sceneRows = scenes.map(scene => ({\n  json: {\n    storyboard_id: storyboardId,\n    topic_id: topicId,\n    scene_number: scene.scene_number,\n    duration_seconds: scene.duration_seconds,\n    visual_description: scene.visual_description,\n    visual_type: scene.visual_type,\n    narration_text: scene.narration_text,\n    onscreen_text: scene.onscreen_text || '',\n    ai_prompt: scene.ai_prompt,\n    approval_status: 'Needs Approval',\n    created_at: new Date().toISOString()\n  }\n}));\n\nreturn sceneRows;"
+      },
+      "id": "transform-scenes-to-rows",
+      "name": "Transform Scenes to Rows",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2220, 180]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Storyboards",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "columnsUi": {
+          "columnValues": [
+            {
+              "column": "storyboard_id",
+              "fieldValue": "={{ $json.storyboard_id }}"
+            },
+            {
+              "column": "topic_id",
+              "fieldValue": "={{ $json.topic_id }}"
+            },
+            {
+              "column": "scene_number",
+              "fieldValue": "={{ $json.scene_number }}"
+            },
+            {
+              "column": "duration_seconds",
+              "fieldValue": "={{ $json.duration_seconds }}"
+            },
+            {
+              "column": "visual_description",
+              "fieldValue": "={{ $json.visual_description }}"
+            },
+            {
+              "column": "visual_type",
+              "fieldValue": "={{ $json.visual_type }}"
+            },
+            {
+              "column": "narration_text",
+              "fieldValue": "={{ $json.narration_text }}"
+            },
+            {
+              "column": "onscreen_text",
+              "fieldValue": "={{ $json.onscreen_text }}"
+            },
+            {
+              "column": "ai_prompt",
+              "fieldValue": "={{ $json.ai_prompt }}"
+            },
+            {
+              "column": "approval_status",
+              "fieldValue": "={{ $json.approval_status }}"
+            },
+            {
+              "column": "created_at",
+              "fieldValue": "={{ $json.created_at }}"
+            }
+          ]
+        }
+      },
+      "id": "write-scenes-to-sheets",
+      "name": "Write Scenes to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [2440, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Topics",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "columnToMatchOn": "topic_id",
+        "valueToMatchOn": "={{ $('Read Unprocessed Topics').item.json.topic_id }}",
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "status",
+              "fieldValue": "Used"
+            }
+          ]
+        }
+      },
+      "id": "update-topic-to-used",
+      "name": "Update Topic Status to Used",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [2660, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Topics",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "columnToMatchOn": "topic_id",
+        "valueToMatchOn": "={{ $('Read Unprocessed Topics').item.json.topic_id }}",
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "status",
+              "fieldValue": "New"
+            }
+          ]
+        }
+      },
+      "id": "reset-topic-to-new",
+      "name": "Reset Topic Status to New",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [2220, 480],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "ERROR_WORKFLOW_ID"
+      },
+      "id": "trigger-error-workflow",
+      "name": "Trigger Error Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2440, 480]
+    },
+    {
+      "parameters": {
+        "content": "## CONFIGURE: Storyboard Generation Workflow\n\n1. **Replace spreadsheet ID** in Read Config node\n   - Get ID from Google Sheets URL\n   - Format: docs.google.com/spreadsheets/d/{SHEETS_ID}/edit\n\n2. **Set up Google Sheets OAuth2 credentials**\n   - Configure on ALL Google Sheets nodes:\n     • Read Unprocessed Topics\n     • Update Topic Status to Selected\n     • Write Scenes to Sheets\n     • Update Topic Status to Used\n     • Reset Topic Status to New\n\n3. **Update render server URL** (if needed)\n   - Default: https://render.digitalcallum.com\n   - Change in Read Config node\n\n4. **Link error workflow**\n   - Import error-workflow.json first\n   - Replace ERROR_WORKFLOW_ID in Trigger Error Workflow node\n\n## Workflow Flow:\nManual Trigger → Read Config → Read 1 Unprocessed Topic (status=New) → Check Found → Update to Selected → Trigger Storyboard API → Wait 10s → Poll Job Status → Check Completed (loop if not done) → Transform Scenes → Write Scene Rows to Sheets (approval_status=Needs Approval) → Update Topic to Used\n\n## Error Handling:\nOn failure: Reset topic status to New → Trigger error workflow",
+        "height": 420,
+        "width": 400
+      },
+      "id": "config-notes",
+      "name": "Configuration Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 680]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger (disabled)": {
+      "main": [
+        [
+          {
+            "node": "Read Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Config": {
+      "main": [
+        [
+          {
+            "node": "Read Unprocessed Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Unprocessed Topics": {
+      "main": [
+        [
+          {
+            "node": "Check if Topic Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Topic Found": {
+      "main": [
+        [
+          {
+            "node": "Update Topic Status to Selected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Topic Status to Selected": {
+      "main": [
+        [
+          {
+            "node": "Trigger Storyboard Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Storyboard Generation": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s": {
+      "main": [
+        [
+          {
+            "node": "Poll Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Job Status": {
+      "main": [
+        [
+          {
+            "node": "Check if Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Completed": {
+      "main": [
+        [
+          {
+            "node": "Transform Scenes to Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Reset Topic Status to New",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Scenes to Rows": {
+      "main": [
+        [
+          {
+            "node": "Write Scenes to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Scenes to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Update Topic Status to Used",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Topic Status to New": {
+      "main": [
+        [
+          {
+            "node": "Trigger Error Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "storyboard-generation-v1"
+}

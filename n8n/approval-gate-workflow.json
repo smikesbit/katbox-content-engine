@@ -1,0 +1,339 @@
+{
+  "name": "Approval Gate - Storyboard to Asset Generation",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger-node",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-node",
+      "name": "Schedule Trigger (Every 30 min)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 460]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "spreadsheetId",
+              "value": "CONFIGURE_YOUR_GOOGLE_SHEETS_ID"
+            },
+            {
+              "name": "renderServerUrl",
+              "value": "https://render.digitalcallum.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "read-config",
+      "name": "Read Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [460, 380]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Storyboards",
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "read-all-storyboards",
+      "name": "Read All Storyboards",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [680, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Group scenes by storyboard_id and check if ALL scenes are approved\nconst rows = $input.all();\nconst storyboards = {};\n\nfor (const item of rows) {\n  const sbId = item.json.storyboard_id;\n  if (!storyboards[sbId]) {\n    storyboards[sbId] = { scenes: [], allApproved: true, anyInProgress: false };\n  }\n  storyboards[sbId].scenes.push(item.json);\n  \n  // Check approval status\n  if (item.json.approval_status !== 'Approved') {\n    storyboards[sbId].allApproved = false;\n  }\n  \n  // Check if asset generation already started\n  if (item.json.asset_status && item.json.asset_status !== 'READY' && item.json.asset_status !== '') {\n    storyboards[sbId].anyInProgress = true;\n  }\n}\n\n// Filter to only storyboards where ALL scenes are approved and no asset generation has started\nconst readyStoryboards = Object.entries(storyboards)\n  .filter(([_, sb]) => sb.allApproved && !sb.anyInProgress)\n  .map(([sbId, sb]) => ({ \n    json: { \n      storyboard_id: sbId, \n      scenes: sb.scenes.sort((a, b) => a.scene_number - b.scene_number)\n    } \n  }));\n\nreturn readyStoryboards;"
+      },
+      "id": "group-by-storyboard",
+      "name": "Group by Storyboard ID",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.storyboard_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-if-any-ready",
+      "name": "Check if Any Ready",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 380]
+    },
+    {
+      "parameters": {
+        "maxItems": 1
+      },
+      "id": "limit-to-1-storyboard",
+      "name": "Limit to 1 Storyboard",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [1340, 280]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Storyboards",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "columnToMatchOn": "storyboard_id",
+        "valueToMatchOn": "={{ $json.storyboard_id }}",
+        "fieldsUi": {
+          "values": [
+            {
+              "column": "asset_status",
+              "fieldValue": "READY"
+            }
+          ]
+        }
+      },
+      "id": "update-asset-status-ready",
+      "name": "Update asset_status to READY",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [1560, 280],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Transform Google Sheets rows to API format\nconst storyboard = items[0].json;\nconst scenes = storyboard.scenes;\n\n// Build the request body for asset generation API\nconst apiPayload = {\n  storyboardId: storyboard.storyboard_id,\n  scenes: scenes.map(scene => ({\n    scene_number: scene.scene_number,\n    duration_seconds: scene.duration_seconds,\n    visual_type: scene.visual_type,\n    visual_description: scene.visual_description,\n    narration_text: scene.narration_text,\n    onscreen_text: scene.onscreen_text || '',\n    ai_prompt: scene.ai_prompt\n  }))\n};\n\nreturn [{ json: apiPayload }];"
+      },
+      "id": "transform-for-api",
+      "name": "Transform for API",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1780, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Read Config').item.json.renderServerUrl }}/assets/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "storyboardId",
+              "value": "={{ $json.storyboardId }}"
+            },
+            {
+              "name": "scenes",
+              "value": "={{ JSON.stringify($json.scenes) }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "trigger-asset-generation",
+      "name": "Trigger Asset Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2000, 280]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "storyboard_id",
+              "value": "={{ $('Limit to 1 Storyboard').item.json.storyboard_id }}"
+            },
+            {
+              "name": "job_id",
+              "value": "={{ $json.jobId }}"
+            },
+            {
+              "name": "triggered_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "log-success",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [2220, 280]
+    },
+    {
+      "parameters": {
+        "content": "## CONFIGURE: Approval Gate Workflow\n\n1. **Replace spreadsheet ID** in Read Config node\n   - Same Google Sheets ID as storyboard workflow\n\n2. **Set up Google Sheets OAuth2 credentials**\n   - Configure on nodes:\n     • Read All Storyboards\n     • Update asset_status to READY\n\n3. **Update render server URL** (if needed)\n   - Default: https://render.digitalcallum.com\n   - Change in Read Config node\n\n## How It Works:\n\nThis workflow bridges human approval to asset generation.\n\n1. **Runs every 30 minutes** (Schedule Trigger)\n2. **Reads ALL scenes** from Storyboards tab\n3. **Groups by storyboard_id** and checks:\n   - ALL scenes have approval_status = 'Approved'?\n   - No asset generation already started?\n4. **Finds ready storyboards** (all approved + not started)\n5. **Limits to 1 storyboard** per run (avoid overload)\n6. **Sets asset_status = READY** for all scenes\n7. **Triggers asset generation** via POST to /assets/generate\n8. **Logs success** with storyboard ID and job ID\n\n## Scheduling:\n- Default: Every 30 minutes\n- Adjust Schedule Trigger for different frequency\n- Use Manual Trigger for testing\n\n## This is the ONLY manual step:\nUser reviews scenes in Google Sheets, sets approval_status to 'Approved' or 'Rejected'. This workflow automatically triggers downstream asset generation when all scenes are approved.",
+        "height": 500,
+        "width": 400
+      },
+      "id": "config-notes",
+      "name": "Configuration Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 680]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger (Every 30 min)": {
+      "main": [
+        [
+          {
+            "node": "Read Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Config": {
+      "main": [
+        [
+          {
+            "node": "Read All Storyboards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Storyboards": {
+      "main": [
+        [
+          {
+            "node": "Group by Storyboard ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group by Storyboard ID": {
+      "main": [
+        [
+          {
+            "node": "Check if Any Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Any Ready": {
+      "main": [
+        [
+          {
+            "node": "Limit to 1 Storyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit to 1 Storyboard": {
+      "main": [
+        [
+          {
+            "node": "Update asset_status to READY",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update asset_status to READY": {
+      "main": [
+        [
+          {
+            "node": "Transform for API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform for API": {
+      "main": [
+        [
+          {
+            "node": "Trigger Asset Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Asset Generation": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "approval-gate-v1"
+}
