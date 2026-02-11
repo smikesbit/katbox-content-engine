@@ -1,0 +1,109 @@
+{
+  "name": "Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger-node",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format error details for notification\nconst errorData = items[0];\nconst error = errorData.json.error || {};\n\nreturn [{\n  json: {\n    workflow_name: $workflow.name,\n    workflow_id: $workflow.id,\n    execution_id: $execution.id,\n    error_message: error.message || 'Unknown error',\n    error_stack: error.stack || 'No stack trace',\n    timestamp: new Date().toISOString(),\n    node_name: error.node || 'Unknown node',\n    input_data: JSON.stringify(errorData.json, null, 2)\n  }\n}];"
+      },
+      "id": "format-error",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "channel": "#errors",
+        "text": "=🚨 Workflow Error\\n\\n*Workflow:* {{ $json.workflow_name }}\\n*Node:* {{ $json.node_name }}\\n*Time:* {{ $json.timestamp }}\\n*Error:* {{ $json.error_message }}\\n\\n```\\n{{ $json.error_stack }}\\n```",
+        "otherOptions": {}
+      },
+      "id": "send-slack-notification",
+      "name": "Send Slack Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [680, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "CONFIGURE_SLACK_CREDENTIALS",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@katbox.com",
+        "toEmail": "admin@katbox.com",
+        "subject": "=Workflow Error: {{ $json.workflow_name }}",
+        "text": "=Workflow {{ $json.workflow_name }} encountered an error:\\n\\nNode: {{ $json.node_name }}\\nTime: {{ $json.timestamp }}\\nError: {{ $json.error_message }}\\n\\nStack Trace:\\n{{ $json.error_stack }}\\n\\nInput Data:\\n{{ $json.input_data }}",
+        "options": {}
+      },
+      "id": "send-email-notification",
+      "name": "Send Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [680, 400],
+      "credentials": {
+        "smtp": {
+          "id": "CONFIGURE_SMTP_CREDENTIALS",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Error Workflow Configuration\n\n1. **Slack Notifications** (Optional)\n   - Add Slack API credentials\n   - Set channel name (default: #errors)\n   - Disable node if not using Slack\n\n2. **Email Notifications** (Optional)\n   - Add SMTP credentials\n   - Set recipient email address\n   - Disable node if not using email\n\n3. **Usage**\n   - This workflow is triggered automatically by errors in other workflows\n   - No manual trigger needed\n   - Other workflows reference this by ID in their error handlers\n\n4. **Customization**\n   - Add logging to external services (Sentry, LogRocket, etc.)\n   - Add retry logic\n   - Add PagerDuty integration for critical errors",
+        "height": 300,
+        "width": 350
+      },
+      "id": "config-notes",
+      "name": "Configuration Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 500]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "error-handler-v1"
+}

@@ -1,0 +1,518 @@
+{
+  "name": "Asset Generation Pipeline",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger-node",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "path": "asset-generation-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger-node",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 460],
+      "webhookId": "asset-generation-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "sheetId": "{{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Storyboards",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "column": "status",
+              "condition": "equals",
+              "value": "Approved"
+            },
+            {
+              "column": "asset_status",
+              "condition": "equals",
+              "value": "READY"
+            }
+          ]
+        }
+      },
+      "id": "read-approved-scenes",
+      "name": "Read Approved Scenes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [460, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Group scenes by storyboard_id\nconst scenes = items.map(item => item.json);\n\n// Create a map of storyboard_id -> scenes\nconst storyboardMap = new Map();\n\nfor (const scene of scenes) {\n  const storyboardId = scene.storyboard_id;\n  if (!storyboardMap.has(storyboardId)) {\n    storyboardMap.set(storyboardId, []);\n  }\n  storyboardMap.get(storyboardId).push({\n    scene_number: scene.scene_number,\n    duration_seconds: scene.duration_seconds,\n    visual_type: scene.visual_type,\n    visual_description: scene.visual_description,\n    narration_text: scene.narration_text,\n    onscreen_text: scene.onscreen_text || '',\n    ai_prompt: scene.ai_prompt\n  });\n}\n\n// Convert map to array of storyboard objects\nconst storyboards = [];\nfor (const [storyboardId, scenes] of storyboardMap.entries()) {\n  storyboards.push({\n    json: {\n      storyboardId,\n      scenes: scenes.sort((a, b) => a.scene_number - b.scene_number)\n    }\n  });\n}\n\nreturn storyboards;"
+      },
+      "id": "group-by-storyboard",
+      "name": "Group by Storyboard",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.scenes.length }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-if-scenes-exist",
+      "name": "Check if Scenes Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Assets",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "mappings": {
+          "fields": [
+            {
+              "column": "asset_status",
+              "value": "IN_PROGRESS"
+            }
+          ]
+        }
+      },
+      "id": "update-status-in-progress",
+      "name": "Update Status to IN_PROGRESS",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [1120, 280],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Read Config').item.json.renderServerUrl || 'https://render.digitalcallum.com' }}/assets/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "storyboardId",
+              "value": "={{ $json.storyboardId }}"
+            },
+            {
+              "name": "scenes",
+              "value": "={{ JSON.stringify($json.scenes) }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "trigger-asset-generation",
+      "name": "Trigger Asset Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1340, 280]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "wait-before-poll",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1560, 280]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Read Config').item.json.renderServerUrl || 'https://render.digitalcallum.com' }}/assets/generate/{{ $('Trigger Asset Generation').item.json.jobId }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "poll-job-status",
+      "name": "Poll Job Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1780, 280]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "check-if-completed",
+      "name": "Check if Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2000, 280]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract asset URLs from completed job response\nconst job = items[0].json;\nconst scenes = job.scenes;\n\n// Transform scenes to include only URLs and metadata\nconst processedScenes = scenes.map(scene => ({\n  json: {\n    storyboard_id: job.storyboardId,\n    scene_number: scene.scene_number,\n    video_url: scene.videoUrl || '',\n    photo_url: scene.photoUrl || '',\n    voiceover_url: scene.voiceoverUrl || '',\n    motion_config: scene.motionConfig ? JSON.stringify(scene.motionConfig) : '',\n    asset_status: scene.visualStatus === 'completed' && scene.voiceoverStatus === 'completed' ? 'DONE' : 'FAILED',\n    error_message: scene.visualError || scene.voiceoverError || '',\n    generated_at: new Date().toISOString()\n  }\n}));\n\nreturn processedScenes;"
+      },
+      "id": "process-results",
+      "name": "Process Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2220, 180]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Assets",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "mappings": {
+          "fields": [
+            {
+              "column": "video_url",
+              "value": "={{ $json.video_url }}"
+            },
+            {
+              "column": "photo_url",
+              "value": "={{ $json.photo_url }}"
+            },
+            {
+              "column": "voiceover_url",
+              "value": "={{ $json.voiceover_url }}"
+            },
+            {
+              "column": "motion_config",
+              "value": "={{ $json.motion_config }}"
+            },
+            {
+              "column": "asset_status",
+              "value": "={{ $json.asset_status }}"
+            },
+            {
+              "column": "generated_at",
+              "value": "={{ $json.generated_at }}"
+            },
+            {
+              "column": "error_message",
+              "value": "={{ $json.error_message }}"
+            }
+          ]
+        }
+      },
+      "id": "write-urls-to-sheets",
+      "name": "Write Asset URLs to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [2440, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "={{ $('Read Config').item.json.spreadsheetId }}",
+        "range": "Assets",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "mappings": {
+          "fields": [
+            {
+              "column": "asset_status",
+              "value": "FAILED"
+            },
+            {
+              "column": "error_message",
+              "value": "={{ $json.error || 'Unknown error during asset generation' }}"
+            }
+          ]
+        }
+      },
+      "id": "update-failed-status",
+      "name": "Update Failed Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [2440, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURE_GOOGLE_SHEETS_CREDENTIALS",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "ERROR_WORKFLOW_ID"
+      },
+      "id": "trigger-error-workflow",
+      "name": "Trigger Error Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2660, 380]
+    },
+    {
+      "parameters": {
+        "content": "## Configuration Instructions\n\n1. **Google Sheets Credentials**: Configure OAuth2 credentials in n8n\n   - Add Google Sheets OAuth2 API credentials\n   - Grant access to your Google Sheets\n   - Update credential IDs in all Google Sheets nodes\n\n2. **Render Server URL**: Default is https://render.digitalcallum.com\n   - Change in HTTP Request nodes if using different server\n\n3. **Error Workflow**: Connect this workflow to your error handler\n   - Update ERROR_WORKFLOW_ID in \"Trigger Error Workflow\" node\n   - Import error-workflow.json first if not already done\n\n4. **Automation**: Replace Manual Trigger with Schedule Trigger\n   - Add a Schedule Trigger node for daily/hourly runs\n   - Connect it to \"Read Approved Scenes\" node\n\n5. **Polling Settings**: Adjust Wait node timeout if needed\n   - Default: 30 second intervals\n   - Maximum iterations: 60 (30 minutes total)\n\n## Workflow Flow:\nManual/Webhook Trigger → Read Approved Scenes → Group by Storyboard → Check if Scenes → Update Status → Trigger Generation → Wait 30s → Poll Status → Check Completion → Process Results → Write URLs",
+        "height": 400,
+        "width": 350
+      },
+      "id": "config-notes",
+      "name": "Configuration Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 580]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "spreadsheetId",
+              "value": "CONFIGURE_YOUR_GOOGLE_SHEETS_ID"
+            },
+            {
+              "name": "renderServerUrl",
+              "value": "https://render.digitalcallum.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "read-config",
+      "name": "Read Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [240, 140]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Config": {
+      "main": [
+        [
+          {
+            "node": "Read Approved Scenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Approved Scenes": {
+      "main": [
+        [
+          {
+            "node": "Group by Storyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group by Storyboard": {
+      "main": [
+        [
+          {
+            "node": "Check if Scenes Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Scenes Exist": {
+      "main": [
+        [
+          {
+            "node": "Update Status to IN_PROGRESS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status to IN_PROGRESS": {
+      "main": [
+        [
+          {
+            "node": "Trigger Asset Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Asset Generation": {
+      "main": [
+        [
+          {
+            "node": "Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 30s": {
+      "main": [
+        [
+          {
+            "node": "Poll Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Job Status": {
+      "main": [
+        [
+          {
+            "node": "Check if Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Completed": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
+        [
+          {
+            "node": "Write Asset URLs to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Completed": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Update Failed Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Failed Status": {
+      "main": [
+        [
+          {
+            "node": "Trigger Error Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "asset-generation-v1"
+}
