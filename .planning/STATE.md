@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Consistently produce 1 on-brand, industry-relevant video per day with only storyboard approval as the manual step.
-**Current focus:** Phase 3: Asset Generation
+**Current focus:** Phase 4: Storyboard Approval
 
 ## Current Position
 
-Phase: 3 of 5 (Asset Generation) — COMPLETE
-Plan: 3 of 3 in phase 3 (just completed)
-Status: Full asset generation pipeline operational with n8n workflow integration
-Last activity: 2026-02-10 — Created n8n asset generation workflow, Docker deployment config, E2E verified pipeline
+Phase: 4 of 5 (Storyboard Approval)
+Plan: 1 of 2 in phase 4 (just completed)
+Status: Storyboard generation API operational with OpenAI GPT-4o integration
+Last activity: 2026-02-11 — Created StoryboardGenerator service with LLM integration and REST endpoints
 
-Progress: [██████░░░░] 64% (9/14 plans complete)
+Progress: [███████░░░] 71% (10/14 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
-- Total execution time: ~5 hours 21 minutes
+- Total plans completed: 10
+- Total execution time: ~5 hours 24 minutes
 
 **By Phase:**
 
@@ -29,16 +29,18 @@ Progress: [██████░░░░] 64% (9/14 plans complete)
 | 01-foundation-schema | 3/3 | ~3 hrs | ~60 min |
 | 02-remotion-render-api | 3/3 | ~87 min | ~29 min |
 | 03-asset-generation | 3/3 | ~48 min | ~16 min |
+| 04-storyboard-approval | 1/2 | ~2 min | ~2 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-03, 03-01, 03-02, 03-03
-- Phase 2 complete (Full render pipeline E2E verified)
+- Last 5 plans: 03-01, 03-02, 03-03, 04-01
 - Phase 3 complete (Asset generation pipeline with n8n integration E2E verified)
+- Phase 4 in progress (Storyboard generation API operational)
 
 *Updated after each plan completion*
 | Phase 03 P01 | 139s | 2 tasks | 3 files |
 | Phase 03 P02 | 149s | 2 tasks | 4 files |
 | Phase 03 P03 | 43min | 2 tasks | 5 files |
+| Phase 04 P01 | 141s | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -58,6 +60,9 @@ Recent decisions affecting current work:
 - n8n Wait node with 30-second polling interval for job completion instead of custom polling logic
 - Update asset_status to IN_PROGRESS before generation to prevent duplicate processing
 - Persistent assets volume in Docker for downloaded asset files
+- Native fetch for OpenAI API calls (no SDK) matching project pattern
+- Duration enforcement with last-scene adjustment or proportional redistribution
+- Storyboard ID format: SB-{topicId} matching Google Sheets schema convention
 
 **From plan 01-01:**
 - 4-tab Google Sheets schema: Topics → Storyboards → Assets → Completed Videos
@@ -148,6 +153,19 @@ Recent decisions affecting current work:
 - KIE_AI_API_KEY environment variable added to Docker deployment
 - E2E verified: 2 test scenes generated AI photo + voiceover in 43 seconds
 
+**From plan 04-01:**
+- StoryboardGenerator service with OpenAI GPT-4o integration for structured storyboard generation
+- Native fetch for OpenAI API calls (no SDK dependency) matching project pattern
+- POST /storyboard/generate endpoint accepts topicId, topicTitle, topicSummary, contentPillar
+- GET /storyboard/generate/:jobId endpoint returns job status with generated scenes array
+- 60-second duration enforcement with auto-correction: last-scene adjustment or proportional redistribution
+- Storyboard scene structure: 7 fields (scene_number, duration_seconds, visual_description, visual_type, narration_text, onscreen_text, ai_prompt)
+- Visual type routing: ai-video (Kling), ai-photo (Flux), motion-graphics (local config)
+- Taglish narration text for Filipino audience (Tagalog-English mix)
+- Async job pattern matching AssetGenerator (fire-and-forget processJob, status polling)
+- Storyboard ID format: SB-{topicId} matching Google Sheets schema
+- Periodic cleanup for storyboard generation jobs (24-hour retention)
+
 ### Pending Todos
 
 None yet.
@@ -158,7 +176,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-10T23:13:00Z
-Stopped at: Completed 03-03-PLAN.md — Phase 3 complete, n8n asset generation workflow E2E verified
+Last session: 2026-02-11T05:10:08Z
+Stopped at: Completed 04-01-PLAN.md — Storyboard generation API operational with OpenAI GPT-4o integration
 Resume file: None
-Next: Begin Phase 4 (04-automated-orchestration)
+Next: Continue Phase 4 — Plan 04-02 (n8n storyboard workflow)
