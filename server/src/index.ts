@@ -5,9 +5,11 @@ import { logger, httpLogger } from './logger.js';
 import { healthRouter } from './routes/health.js';
 import { renderRouter } from './routes/render.js';
 import { assetsRouter } from './routes/assets.js';
+import { storyboardRouter } from './routes/storyboard.js';
 import { renderService } from './services/render-service.js';
 import { jobManager } from './services/job-manager.js';
 import { assetGenerator } from './services/asset-generator.js';
+import { storyboardGenerator } from './services/storyboard-generator.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -26,6 +28,7 @@ app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
 app.use('/health', healthRouter);
 app.use('/render', renderRouter);
 app.use('/assets/generate', assetsRouter);
+app.use('/storyboard/generate', storyboardRouter);
 
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -69,5 +72,10 @@ setInterval(() => {
   const cleanedAssetJobs = assetGenerator.cleanupOldJobs(24 * 60 * 60 * 1000);
   if (cleanedAssetJobs > 0) {
     logger.info({ msg: 'Cleaned old asset jobs', count: cleanedAssetJobs });
+  }
+
+  const cleanedStoryboardJobs = storyboardGenerator.cleanupOldJobs(24 * 60 * 60 * 1000);
+  if (cleanedStoryboardJobs > 0) {
+    logger.info({ msg: 'Cleaned old storyboard jobs', count: cleanedStoryboardJobs });
   }
 }, 60 * 60 * 1000);
